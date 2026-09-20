@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="description" content="化工总控工（高级工）刷题工具，支持错题本、随机练习、离线使用">
+
+<title>化工总控工刷题</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="favicon/favicon.svg">
+<link rel="icon" type="image/png" sizes="96x96" href="favicon/favicon-96x96.png">
+<link rel="apple-touch-icon" sizes="180x180" href="favicon/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="总控工刷题">
+
+<style>
+/* ============ 设计变量 ============ */
+:root {
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --text: #0f172a;
+  --text-soft: #64748b;
+  --border: #e2e8f0;
+  --primary: #2563eb;
+  --primary-soft: #dbeafe;
+  --ok: #16a34a;
+  --ok-soft: #dcfce7;
+  --ok-border: #86efac;
+  --bad: #dc2626;
+  --bad-soft: #fee2e2;
+  --bad-border: #fca5a5;
+  --warn: #d97706;
+  --radius: 14px;
+  --shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 4px 16px rgba(15, 23, 42, .06);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1220;
+    --card: #131c2e;
+    --text: #e8eefb;
+    --text-soft: #94a3b8;
+    --border: #26324a;
+    --primary: #60a5fa;
+    --primary-soft: #1e3a8a;
+    --ok: #4ade80;
+    --ok-soft: #14351f;
+    --ok-border: #22c55e;
+    --bad: #f87171;
+    --bad-soft: #3b1616;
+    --bad-border: #ef4444;
+    --warn: #fbbf24;
+    --shadow: 0 1px 3px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .3);
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior-y: contain;
+}
+
+button { font-family: inherit; font-size: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+button:disabled { cursor: not-allowed; }
+
+/* ============ 顶部栏 ============ */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding-top: var(--safe-t);
+}
+
+.head-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 10px 14px 0;
+}
+
+.head-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brand-logo {
+  width: 28px; height: 28px; flex: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), #7c3aed);
+  display: grid; place-items: center;
+  color: #fff; font-weight: 800; font-size: 15px;
+}
+.brand h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 顶部导航 */
+.nav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 10px;
+}
+.nav::-webkit-scrollbar { display: none; }
+
+.nav button {
+  flex: none;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-soft);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  transition: all .16s ease;
+  white-space: nowrap;
+}
+.nav button:hover { color: var(--text); border-color: var(--primary); }
+.nav button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.nav button .badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--bad-soft);
+  color: var(--bad);
+  line-height: 16px;
+}
+.nav button.active .badge { background: rgba(255,255,255,.28); color: #fff; }
+
+/* 类型子导航 */
+.subnav {
+  display: none;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 0 10px;
+  animation: slideDown .18s ease;
+}
+.subnav::-webkit-scrollbar { display: none; }
+.subnav.show { display: flex; }
+.subnav button {
+  flex: none;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px dashed transparent;
+  white-space: nowrap;
+  transition: all .16s ease;
+}
+.subnav button.active {
+  color: #fff;
+  background: var(--primary);
+  border-style: solid;
+  border-color: var(--primary);
+}
+@keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* ============ 状态条 ============ */
+.statusbar {
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 12px 14px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.stat-title {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.chip {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  white-space: nowrap;
+}
+.stat-nums {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.stat-nums b { color: var(--text); font-weight: 700; }
+.stat-nums .acc-ok { color: var(--ok); }
+.stat-nums .acc-bad { color: var(--bad); }
+
+.progress-track {
+  max-width: 900px;
+  margin: 10px auto 0;
+  width: 100%;
+  padding: 0 14px;
+}
+.progress-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), #7c3aed);
+  transition: width .25s ease;
+}
+
+/* ============ 主内容 ============ */
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 14px 14px 20px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 16px;
+  animation: fadeUp .22s ease;
+}
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.qmeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.qtype {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 6px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.qid { font-size: 12px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.qhint { font-size: 12px; color: var(--warn); font-weight: 600; }
+
+.question {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.7;
+  margin: 0 0 16px;
+  word-break: break-word;
+}
+
+/* 选项 */
+.options { display: flex; flex-direction: column; gap: 9px; }
+
+.opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 15.5px;
+  line-height: 1.55;
+  transition: border-color .15s ease, background .15s ease, transform .1s ease;
+  word-break: break-word;
+}
+.opt:not(:disabled):hover { border-color: var(--primary); background: var(--primary-soft); }
+.opt:not(:disabled):active { transform: scale(.988); }
+
+.opt-key {
+  flex: none;
+  width: 25px; height: 25px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 700;
+  background: var(--bg);
+  color: var(--text-soft);
+  border: 1.5px solid var(--border);
+  transition: all .15s ease;
+}
+.opt-text { flex: 1; padding-top: 1px; }
+
+/* 选中态（多选未提交） */
+.opt.selected { border-color: var(--primary); background: var(--primary-soft); }
+.opt.selected .opt-key { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* 判定后正确 */
+.opt.correct { border-color: var(--ok-border); background: var(--ok-soft); }
+.opt.correct .opt-key { background: var(--ok); color: #fff; border-color: var(--ok); }
+
+/* 判定后错误（用户选错） */
+.opt.wrong { border-color: var(--bad-border); background: var(--bad-soft); }
+.opt.wrong .opt-key { background: var(--bad); color: #fff; border-color: var(--bad); }
+
+.opt:disabled { opacity: 1; }
+.opt.dim { opacity: .52; }
+
+/* ============ 解析面板 ============ */
+.explain {
+  margin-top: 16px;
+  border-radius: 11px;
+  border: 1.5px solid var(--border);
+  overflow: hidden;
+  animation: fadeUp .2s ease;
+}
+.explain.ok { border-color: var(--ok-border); }
+.explain.bad { border-color: var(--bad-border); }
+
+.explain-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.explain.ok .explain-head { background: var(--ok-soft); color: var(--ok); }
+.explain.bad .explain-head { background: var(--bad-soft); color: var(--bad); }
+.explain-head .icon { font-size: 16px; }
+
+.explain-body { padding: 12px 13px; font-size: 14.5px; line-height: 1.72; }
+.explain-body .ans-line {
+  margin-bottom: 9px;
+  padding-bottom: 9px;
+  border-bottom: 1px dashed var(--border);
+}
+.explain-body .ans-line b { color: var(--ok); }
+.explain-body .exp-label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+  margin-bottom: 3px;
+}
+.explain-body .exp-text { color: var(--text); white-space: pre-wrap; }
+.explain-body .exp-text.empty { color: var(--text-soft); font-style: italic; }
+
+/* ============ 空状态 / 完成态 ============ */
+.empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-soft);
+}
+.empty .big { font-size: 46px; line-height: 1; margin-bottom: 14px; }
+.empty h2 { margin: 0 0 8px; font-size: 18px; color: var(--text); font-weight: 700; }
+.empty p { margin: 0 0 18px; font-size: 14.5px; }
+
+.done-stats {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  margin: 22px 0;
+  flex-wrap: wrap;
+}
+.done-stat { text-align: center; }
+.done-stat .v { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.done-stat .k { font-size: 12.5px; color: var(--text-soft); }
+.done-stat.ok .v { color: var(--ok); }
+.done-stat.bad .v { color: var(--bad); }
+
+/* ============ 底部操作栏 ============ */
+footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 10px 14px calc(10px + var(--safe-b));
+  margin-top: auto;
+}
+.foot-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn {
+  flex: 1 1 auto;
+  min-width: 104px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: center;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.btn:active:not(:disabled) { transform: scale(.985); }
+.btn:disabled { opacity: .42; }
+
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
+
+.btn-danger { color: var(--bad); border-color: var(--bad-border); }
+.btn-danger:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+
+.btn-next { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, .45); }
+  50%      { box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); }
+}
+
+/* ============ Toast ============ */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + var(--safe-b));
+  transform: translate(-50%, 14px);
+  z-index: 200;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .93);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s ease, transform .22s ease;
+  max-width: 88vw;
+  text-align: center;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.ok  { background: rgba(22, 163, 74, .95); }
+#toast.bad { background: rgba(220, 38, 38, .95); }
+
+.hidden { display: none !important; }
+
+/* ============ 桌面端 ============ */
+@media (min-width: 760px) {
+  .brand h1 { font-size: 17px; }
+  main { padding: 20px 14px 26px; }
+  .card { padding: 26px 24px; }
+  .question { font-size: 18.5px; }
+  .opt { padding: 14px 17px; font-size: 16px; }
+  .btn { flex: 0 1 auto; min-width: 118px; }
+  .foot-inner { justify-content: flex-end; }
+  .empty { padding: 66px 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-inner">
+    <div class="head-top">
+      <div class="brand">
+        <div class="brand-logo">化</div>
+        <h1>化工总控工刷题</h1>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-mode="all">总题库</button>
+      <button data-mode="wrong">错题库<span class="badge" id="wrongBadge">0</span></button>
+      <button data-mode="random">随机题库</button>
+      <button data-mode="type">类型题库</button>
+    </nav>
+    <nav class="subnav" id="subnav">
+      <button data-type="tf">判断题</button>
+      <button data-type="single">单选题</button>
+      <button data-type="multiple">多选题</button>
+    </nav>
+  </div>
+</header>
+
+<div class="statusbar" id="statusbar">
+  <div class="stat-title">
+    <span id="statTitle">总题库</span>
+    <span class="chip hidden" id="statChip">判断题</span>
+  </div>
+  <div class="stat-nums">
+    <span>进度 <b id="statProgress">0/0</b></span>
+    <span>正确率 <b id="statAcc">—</b></span>
+  </div>
+</div>
+<div class="progress-track" id="progressTrack">
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<main>
+  <div id="cardSlot"></div>
+</main>
+
+<footer>
+  <div class="foot-inner">
+    <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+    <button class="btn" id="btnRedo">重做本组</button>
+    <button class="btn" id="btnClearWrong">清空错题库</button>
+    <button class="btn" id="btnExport">导出错题库</button>
+    <button class="btn" id="btnImport">导入错题库</button>
+  </div>
+</footer>
+
+<div id="toast"></div>
+
+<!--
+  data.js 使用 ES Module 语法（export const questions = [...]），
+  因此必须用 type="module" 加载，再桥接到 window.questions 供 app.js 使用。
+  注意：内联 module 脚本与外部 module 脚本各自独立，需通过 window 传递数据。
+-->
+<script type="module">
+  import { questions } from './data.js';
+  window.questions = questions;
+  window.dispatchEvent(new Event('questions-ready'));
+</script>
+
+<!--
+  兜底：file:// 协议下浏览器会以 CORS 为由拒绝 ES module 导入，
+  此处给出明确提示，避免出现空白页面。
+-->
+<script>
+  setTimeout(function () {
+    if (Array.isArray(window.questions) && window.questions.length) return;
+    if (location.protocol !== 'file:') return;
+    var slot = document.getElementById('cardSlot');
+    if (!slot || slot.querySelector('.question, .empty')) return;
+    slot.innerHTML =
+      '<div class="card"><div class="empty">' +
+      '<div class="big">🔌</div><h2>需要通过本地服务器打开</h2>' +
+      '<p>浏览器出于安全限制，禁止以 file:// 直接加载 ES Module 题库。<br>' +
+      '请在项目目录执行下面任一命令，然后访问 <b>http://localhost:8080</b>：</p>' +
+      '<pre style="text-align:left;background:var(--bg);padding:12px;border-radius:8px;' +
+      'overflow-x:auto;font-size:13px;border:1px solid var(--border);">' +
+      'python -m http.server 8080\n' +
+      '# 或\nnpx serve .</pre>' +
+      '</div></div>';
+  }, 1200);
+</script>
+
+<script src="app.js"></script>
+</body>
+</html>
