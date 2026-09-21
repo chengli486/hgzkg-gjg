@@ -6,7 +6,7 @@
  *   - 导航请求：网络优先，离线时回落 index.html
  * ====================================================================== */
 
-var CACHE_NAME = 'hgzk-cache-v4';
+var CACHE_NAME = 'hgzk-cache-v5';
 
 var PRECACHE_URLS = [
   './',
