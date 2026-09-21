@@ -8,8 +8,12 @@
   /* ---------------- 常量 ---------------- */
   var LS_WRONG    = 'hgzk_wrong_ids_v1';
   var LS_LAST_RND = 'hgzk_last_random_v1';
+  var LS_PROGRESS = 'hgzk_progress_v1';   // 各题库断点进度
+  var LS_STATS    = 'hgzk_stats_v1';      // 累计答题统计
   var RANDOM_SIZE = 50;      // 随机题库每轮抽取题量
+  var SEGMENT_SIZE = 100;    // 类型题库分段大小
   var AUTO_NEXT   = 800;     // 答对后自动进入下一题的延时(ms)
+  var HIST_MIN    = 10;      // 累计正确率少于该答题数时显示「—」
 
   var TYPE_LABEL = { tf: '判断题', single: '单选题', multiple: '多选题' };
   var TYPE_ORDER = { tf: 'tf', single: 'single', multiple: 'multiple' };
@@ -81,6 +85,7 @@
   var state = {
     mode: 'all',        // all | wrong | random | type
     type: 'tf',         // 仅 mode==='type' 时有效
+    segment: 0,         // 仅 mode==='type' 时有效：当前分段起始索引(0/100/200...)
     list: [],           // 当前题库题目数组
     idx: 0,             // 当前题索引
     answered: false,    // 当前题是否已判定
@@ -92,8 +97,8 @@
 
   /* ---------------- DOM ---------------- */
   var $ = function (id) { return document.getElementById(id); };
-  var cardSlot, statTitle, statChip, statProgress, statAcc, progressFill;
-  var navBar, subnav, btnRedo, btnClearWrong, btnExport, btnImport, importFile, toastEl;
+  var cardSlot, statTitle, statChip, statProgress, statAcc, statHist, progressFill;
+  var navBar, subnav, segbar, btnRedo, btnClearWrong, btnExport, btnImport, importFile, toastEl;
   var toastTimer = null;
 
   function cacheDom() {
@@ -102,9 +107,11 @@
     statChip     = $('statChip');
     statProgress = $('statProgress');
     statAcc      = $('statAcc');
+    statHist     = $('statHist');
     progressFill = $('progressFill');
     navBar       = $('nav');
     subnav       = $('subnav');
+    segbar       = $('segbar');
     btnRedo      = $('btnRedo');
     btnClearWrong= $('btnClearWrong');
     btnExport    = $('btnExport');
@@ -189,6 +196,21 @@
     return picked;
   }
 
+  // 某题型的全部题目（按原题库顺序）
+  function typeQuestions() {
+    return ALL.filter(function (q) { return q.type === state.type; });
+  }
+
+  // 分段越界 / 非法时归零；题型题量 <= 100 时保持 0
+  function normalizeSegment() {
+    if (state.mode !== 'type') { state.segment = 0; return; }
+    var n = typeQuestions().length;
+    if (n <= SEGMENT_SIZE) { state.segment = 0; return; }
+    if (state.segment < 0 || state.segment >= n || state.segment % SEGMENT_SIZE !== 0) {
+      state.segment = 0;   // 切题型后超出新题型范围 → 归零
+    }
+  }
+
   function buildList() {
     var list = [];
     if (state.mode === 'all') {
@@ -199,20 +221,99 @@
     } else if (state.mode === 'random') {
       list = buildRandom();
     } else if (state.mode === 'type') {
-      list = ALL.filter(function (q) { return q.type === state.type; });
+      // 先按题型过滤，再按 [segment, segment + 100) 切片（末段不足 100 取实际长度）
+      var all = typeQuestions();
+      list = all.slice(state.segment, state.segment + SEGMENT_SIZE);
     }
     return list;
   }
 
-  /* ---------------- 启动 / 重做 本组 ---------------- */
-  function startGroup() {
+  /* ---------------- 断点进度 / 累计统计 ----------------
+   * hgzk_progress_v1: { [groupKey]: { idx, stat:{right,wrong} } }
+   * hgzk_stats_v1:    { totalAnswered, totalRight, lastUpdated }
+   * 读取失败一律当作空对象，保证坏数据不影响答题。
+   */
+  function groupKey() {
+    if (state.mode === 'all')    return 'all';
+    if (state.mode === 'wrong')  return 'wrong';
+    if (state.mode === 'random') return 'random';
+    return 'type:' + state.type + ':' + state.segment;
+  }
+
+  function readProgressMap() {
+    var m = readJSON(LS_PROGRESS, null);
+    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  }
+
+  // 保存当前组进度（静默失败）。idxOverride 用于「刚判定完、恢复点指向下一题」的场景。
+  function saveProgress(idxOverride) {
+    if (!state.list.length) return;
+    var map = readProgressMap();
+    var idx = (typeof idxOverride === 'number' && isFinite(idxOverride)) ? idxOverride : state.idx;
+    map[groupKey()] = { idx: idx, stat: { right: state.stat.right, wrong: state.stat.wrong } };
+    writeJSON(LS_PROGRESS, map);
+  }
+
+  // 删除当前组进度（「重做本组」用）
+  function dropProgress() {
+    var map = readProgressMap();
+    if (Object.prototype.hasOwnProperty.call(map, groupKey())) {
+      delete map[groupKey()];
+      writeJSON(LS_PROGRESS, map);
+    }
+  }
+
+  // 累计统计：每判定一题累加一次
+  function bumpStats(correct) {
+    var s = readJSON(LS_STATS, null);
+    if (!s || typeof s !== 'object' || Array.isArray(s)) s = {};
+    var answered = Number(s.totalAnswered) || 0;
+    var right    = Number(s.totalRight) || 0;
+    s.totalAnswered = answered + 1;
+    s.totalRight    = right + (correct ? 1 : 0);
+    s.lastUpdated   = new Date().toISOString();
+    writeJSON(LS_STATS, s);
+  }
+
+  function histAccuracy() {
+    var s = readJSON(LS_STATS, null);
+    if (!s || typeof s !== 'object') return null;
+    var answered = Number(s.totalAnswered) || 0;
+    var right    = Number(s.totalRight) || 0;
+    if (answered < HIST_MIN) return null;
+    return Math.round(right / answered * 100);
+  }
+
+  /* ---------------- 启动 / 重做 本组 ----------------
+   * restore=true  → 尝试恢复该 groupKey 的断点
+   * restore=false → 从头开始（「重做本组」）
+   */
+  function startGroup(restore) {
     clearTimeout(state.timer);
+    normalizeSegment();
     state.list     = buildList();
-    state.idx      = 0;
     state.answered = false;
     state.picks    = [];
-    state.stat     = { right: 0, wrong: 0 };
     state.finished = false;
+
+    var saved = restore ? readProgressMap()[groupKey()] : null;
+    var total = state.list.length;
+    var idx   = saved ? Number(saved.idx) : 0;
+
+    // 边界：无记录 / idx 非法 / idx 超出当前题量 → 从头开始
+    if (!saved || !isFinite(idx) || idx <= 0 || idx >= total) {
+      if (saved && isFinite(idx) && idx >= total && total > 0) dropProgress();  // 题量变化导致的陈旧记录
+      state.idx  = 0;
+      state.stat = { right: 0, wrong: 0 };
+    } else {
+      state.idx  = idx;
+      state.stat = {
+        right: Number(saved.stat && saved.stat.right) || 0,
+        wrong: Number(saved.stat && saved.stat.wrong) || 0
+      };
+      toast('已恢复上次进度（第 ' + (idx + 1) + ' 题）');
+    }
+
     render();
   }
 
@@ -258,6 +359,42 @@
 
     var pct = total === 0 ? 0 : Math.round(done / total * 100);
     progressFill.style.width = pct + '%';
+
+    // 累计正确率（少于 HIST_MIN 题时显示 —）
+    if (statHist) {
+      var hist = histAccuracy();
+      statHist.textContent = hist === null ? '—' : hist + '%';
+    }
+  }
+
+  /* ---------------- 分段子导航 ---------------- */
+  function renderSegbar() {
+    if (!segbar) return;
+
+    // 非类型题库：隐藏
+    if (state.mode !== 'type') {
+      segbar.classList.remove('show');
+      segbar.innerHTML = '';
+      return;
+    }
+
+    var n = typeQuestions().length;
+    // 题量 <= 100：不显示分段
+    if (n <= SEGMENT_SIZE) {
+      segbar.classList.remove('show');
+      segbar.innerHTML = '';
+      return;
+    }
+
+    var html = '';
+    for (var s = 0; s < n; s += SEGMENT_SIZE) {
+      var end = Math.min(s + SEGMENT_SIZE, n);   // 末段用实际题量
+      html += '<button type="button" data-seg="' + s + '"' +
+              (s === state.segment ? ' class="active"' : '') + '>' +
+              (s + 1) + '-' + end + '</button>';
+    }
+    segbar.innerHTML = html;
+    segbar.classList.add('show');
   }
 
   function renderEmpty(html) {
@@ -266,6 +403,7 @@
 
   function render() {
     renderStatus();
+    renderSegbar();
     renderWrongBadge();
     updateButtons();
 
@@ -305,7 +443,7 @@
         '<button class="btn btn-primary" id="emptyRedo" style="max-width:200px;margin:0 auto;">重做本组</button>'
       );
       var r = $('emptyRedo');
-      if (r) r.onclick = function () { startGroup(); };
+      if (r) r.onclick = function () { dropProgress(); startGroup(false); };
       return;
     }
 
@@ -441,6 +579,10 @@
       if (!wrongSet.has(q.id)) { wrongSet.add(q.id); saveWrong(); }
     }
 
+    // 累计统计 + 断点进度（本题已判定，恢复点应为下一道未答题）
+    bumpStats(correct);
+    saveProgress(state.idx + 1);
+
     paintResult(q, correct, rightArr);
     renderStatus();
     updateButtons();
@@ -505,6 +647,7 @@
     state.idx++;
     state.answered = false;
     state.picks = [];
+    saveProgress();          // 前进后同步断点
     render();
     // 滚动到顶部，便于阅读新题
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
@@ -512,6 +655,7 @@
 
   /* ---------------- 模式切换 ---------------- */
   function switchMode(mode) {
+    saveProgress();               // 先保存当前组，再切换
     state.mode = mode;
     state.finished = false;
 
@@ -537,17 +681,27 @@
       }
     } else {
       subnav.classList.remove('show');
+      state.segment = 0;          // 切到非 type 模式：分段归零
     }
 
-    startGroup();
+    startGroup(true);
   }
 
   function switchType(t) {
+    saveProgress();               // 先保存当前组，再切换
     state.type = t;
+    state.segment = 0;            // 切题型：分段归零
     Array.prototype.forEach.call(subnav.querySelectorAll('button'), function (b) {
       b.classList.toggle('active', b.dataset.type === t);
     });
-    startGroup();
+    startGroup(true);
+  }
+
+  function switchSegment(seg) {
+    if (seg === state.segment) return;
+    saveProgress();               // 先保存当前分段，再切换
+    state.segment = seg;
+    startGroup(true);
   }
 
   /* ---------------- 错题库 导入 / 导出 ---------------- */
@@ -608,8 +762,8 @@
       saveWrong();
       toast('导入完成：新增 ' + added + ' 道，跳过 ' + skipped + ' 道（共 ' + wrongSet.size + ' 道）', 'ok');
 
-      // 若正在看错题库，刷新列表
-      if (state.mode === 'wrong') startGroup();
+      // 若正在看错题库，刷新列表（进度记录不受影响）
+      if (state.mode === 'wrong') startGroup(true);
       else renderStatus();
     };
     reader.onerror = function () { toast('读取文件失败', 'bad'); };
@@ -622,7 +776,8 @@
     wrongSet.clear();
     saveWrong();
     toast('错题库已清空', 'ok');
-    if (state.mode === 'wrong') startGroup();
+    // 不影响进度记录；错题库下次进入时按实际题量自动调整
+    if (state.mode === 'wrong') startGroup(true);
     else renderStatus();
   }
 
@@ -690,9 +845,17 @@
       var btn = ev.target.closest ? ev.target.closest('button[data-type]') : null;
       if (btn) switchType(btn.dataset.type);
     });
+    segbar.addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('button[data-seg]') : null;
+      if (btn) switchSegment(Number(btn.dataset.seg));
+    });
 
     // 底部按钮
-    btnRedo.onclick       = function () { startGroup(); toast('已重做本组'); };
+    btnRedo.onclick       = function () {
+      dropProgress();            // 删除该组断点，累计统计不清
+      startGroup(false);
+      toast('已重做本组');
+    };
     btnClearWrong.onclick = clearWrong;
     btnExport.onclick     = exportWrong;
     btnImport.onclick     = function () { importFile.click(); };
