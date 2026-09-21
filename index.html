@@ -169,8 +169,8 @@ header {
 }
 .nav button.active .badge { background: rgba(255,255,255,.28); color: #fff; }
 
-/* 类型子导航 */
-.subnav {
+/* 类型子导航 + 分段子导航（segbar 复用 subnav 视觉风格） */
+.subnav, .segbar {
   display: none;
   gap: 6px;
   overflow-x: auto;
@@ -178,9 +178,9 @@ header {
   padding: 0 0 10px;
   animation: slideDown .18s ease;
 }
-.subnav::-webkit-scrollbar { display: none; }
-.subnav.show { display: flex; }
-.subnav button {
+.subnav::-webkit-scrollbar, .segbar::-webkit-scrollbar { display: none; }
+.subnav.show, .segbar.show { display: flex; }
+.subnav button, .segbar button {
   flex: none;
   padding: 5px 12px;
   border-radius: 999px;
@@ -192,11 +192,17 @@ header {
   white-space: nowrap;
   transition: all .16s ease;
 }
-.subnav button.active {
+.subnav button.active, .segbar button.active {
   color: #fff;
   background: var(--primary);
   border-style: solid;
   border-color: var(--primary);
+}
+/* 分段按钮：文字更短，padding 更小 */
+.segbar button {
+  padding: 3px 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
@@ -238,6 +244,7 @@ header {
 .stat-nums b { color: var(--text); font-weight: 700; }
 .stat-nums .acc-ok { color: var(--ok); }
 .stat-nums .acc-bad { color: var(--bad); }
+.stat-nums .hist { font-size: 12px; color: var(--text-soft); }
 
 .progress-track {
   max-width: 900px;
@@ -323,7 +330,14 @@ main {
   transition: border-color .15s ease, background .15s ease, transform .1s ease;
   word-break: break-word;
 }
-.opt:not(:disabled):hover { border-color: var(--primary); background: var(--primary-soft); }
+/*
+ * 悬浮反馈只在真正支持悬浮的设备（桌面鼠标）上生效。
+ * 触摸设备上 :hover 会「粘」在最后点击的元素上，取消勾选后仍保持蓝色，
+ * 造成「取消后边框不消失」的假象。
+ */
+@media (hover: hover) and (pointer: fine) {
+  .opt:not(:disabled):hover { border-color: var(--primary); background: var(--primary-soft); }
+}
 .opt:not(:disabled):active { transform: scale(.988); }
 
 .opt-key {
@@ -533,6 +547,7 @@ footer {
       <button data-type="single">单选题</button>
       <button data-type="multiple">多选题</button>
     </nav>
+    <nav class="segbar" id="segbar"></nav>
   </div>
 </header>
 
@@ -544,6 +559,7 @@ footer {
   <div class="stat-nums">
     <span>进度 <b id="statProgress">0/0</b></span>
     <span>正确率 <b id="statAcc">—</b></span>
+    <span class="hist">历史 <b id="statHist">—</b></span>
   </div>
 </div>
 <div class="progress-track" id="progressTrack">
